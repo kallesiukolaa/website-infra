@@ -89,7 +89,7 @@ export class WebsiteInfraStack extends Stack {
     const ecrRepo = Repository.fromRepositoryName(this, 'ecr-repo-for-the-app', process.env.ECR_REPO ?? '')
 
     task.addContainer('new-container-for-task', {
-      image: ContainerImage.fromEcrRepository(ecrRepo, 'website-image-name-1756623118'),
+      image: ContainerImage.fromEcrRepository(ecrRepo),
       readonlyRootFilesystem: true,
       portMappings: [
         {
