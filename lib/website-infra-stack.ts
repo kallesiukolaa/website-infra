@@ -1,20 +1,40 @@
 import { Stack, StackProps } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
-import { Cluster, Compatibility, ContainerImage, CpuArchitecture, FargateService, OperatingSystemFamily, TaskDefinition } from 'aws-cdk-lib/aws-ecs';
-import {Vpc, SecurityGroup, Peer, Port, GatewayVpcEndpoint, GatewayVpcEndpointAwsService, InterfaceVpcEndpoint, InterfaceVpcEndpointAwsService} from 'aws-cdk-lib/aws-ec2'
-import {Repository} from 'aws-cdk-lib/aws-ecr'
+import { 
+  Cluster, 
+  Compatibility, 
+  ContainerImage, 
+  CpuArchitecture, 
+  FargateService, 
+  OperatingSystemFamily, 
+  TaskDefinition 
+} from 'aws-cdk-lib/aws-ecs';
+import { 
+  Vpc, 
+  SecurityGroup, 
+  Peer, 
+  Port, 
+  GatewayVpcEndpoint, 
+  GatewayVpcEndpointAwsService, 
+  InterfaceVpcEndpoint, 
+  InterfaceVpcEndpointAwsService 
+} from 'aws-cdk-lib/aws-ec2'
+import { Repository } from 'aws-cdk-lib/aws-ecr'
 import { configDotenv } from 'dotenv';
-import { PolicyStatement, StarPrincipal } from 'aws-cdk-lib/aws-iam';
+import { 
+  PolicyStatement, 
+  StarPrincipal 
+} from 'aws-cdk-lib/aws-iam';
 
-configDotenv({path: ".env"})
+configDotenv({ path: ".env" })
 
 export class WebsiteInfraStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
 
     const vpcUsed = Vpc.fromLookup(this, 'vpc-for-webpage-cluster', {
-        isDefault: true
-      })
+      isDefault: true
+    })
 
     // AWS VPC endpoints have cost so we don't keep these. However the endpoints are required if you prefer to have a non-public ip address in your task. Because our webpage currently contains non-sensitive data, we aim to minimize cost. If this will change un comment these lines and set the next variable assignPublicIp false.
 
