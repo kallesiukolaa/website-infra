@@ -13,3 +13,11 @@ The `cdk.json` file tells the CDK Toolkit how to execute your app.
 * `cdk deploy`      deploy this stack to your default AWS account/region
 * `cdk diff`        compare deployed stack with current state
 * `cdk synth`       emits the synthesized CloudFormation template
+* `sh create-env-file.sh`       create the env file for aws deployment
+
+If you want to create the .env file manually
+```text
+ACCOUNT=your aws account id
+REGION=your-region
+ECR_REPO=aws-repo-for-my-webpage
+```
