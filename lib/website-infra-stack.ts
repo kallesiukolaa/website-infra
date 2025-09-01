@@ -1,11 +1,14 @@
-import { Duration, Stack, StackProps } from 'aws-cdk-lib';
+import { Duration, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import { 
   Cluster, 
   Compatibility, 
   ContainerImage, 
   CpuArchitecture, 
+  DeploymentControllerType, 
+  DeploymentStrategy, 
   FargateService, 
+  LogDriver, 
   OperatingSystemFamily, 
   TaskDefinition 
 } from 'aws-cdk-lib/aws-ecs';
@@ -31,6 +34,7 @@ import {ARecord, HostedZone, RecordTarget, CnameRecord} from 'aws-cdk-lib/aws-ro
 import { ClassicLoadBalancerTarget, LoadBalancerTarget } from 'aws-cdk-lib/aws-route53-targets';
 import { ApplicationLoadBalancer, ApplicationProtocol, ApplicationTargetGroup, ListenerAction, Protocol } from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import { Certificate } from 'aws-cdk-lib/aws-certificatemanager';
+import { DataProtectionPolicy, LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 
 configDotenv({ path: ".env" })
 
@@ -65,6 +69,11 @@ export class WebsiteInfraStack extends Stack {
 
       const ecrEndpointECRDocker = new InterfaceVpcEndpoint(this, 'vpc-interface-endpoint-ecr-docker', {
         service: InterfaceVpcEndpointAwsService.ECR_DOCKER,
+        vpc: vpcUsed
+      })
+
+      const ecrEndpointLogs = new InterfaceVpcEndpoint(this, 'vpc-interface-endpoint-cloudwatch-logs', {
+        service: InterfaceVpcEndpointAwsService.CLOUDWATCH_LOGS,
         vpc: vpcUsed
       })
 
@@ -112,7 +121,14 @@ export class WebsiteInfraStack extends Stack {
           containerPort: 3000,
           hostPort: 3000
         }
-      ]
+      ],
+      logging: LogDriver.awsLogs({
+        streamPrefix: 'WebSiteService',
+        logGroup: new LogGroup(this, 'WebSiteServiceLogGroup', {
+          retention: RetentionDays.ONE_DAY,
+          removalPolicy: RemovalPolicy.DESTROY
+        })
+      })
     })
 
     const service = new FargateService(this, 'Service-for-running-the-webpage', {
