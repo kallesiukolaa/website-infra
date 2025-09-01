@@ -1,4 +1,4 @@
-import { Stack, StackProps } from 'aws-cdk-lib';
+import { Duration, Stack, StackProps } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import { 
   Cluster, 
@@ -25,6 +25,12 @@ import {
   PolicyStatement, 
   StarPrincipal 
 } from 'aws-cdk-lib/aws-iam';
+import {LoadBalancer} from 'aws-cdk-lib/aws-elasticloadbalancing'
+import {StringParameter} from 'aws-cdk-lib/aws-ssm'
+import {ARecord, HostedZone, RecordTarget, CnameRecord} from 'aws-cdk-lib/aws-route53'
+import { ClassicLoadBalancerTarget, LoadBalancerTarget } from 'aws-cdk-lib/aws-route53-targets';
+import { ApplicationLoadBalancer, ApplicationProtocol, ApplicationTargetGroup, ListenerAction, Protocol } from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import { Certificate } from 'aws-cdk-lib/aws-certificatemanager';
 
 configDotenv({ path: ".env" })
 
@@ -36,41 +42,51 @@ export class WebsiteInfraStack extends Stack {
       isDefault: true
     })
 
-    // AWS VPC endpoints have cost so we don't keep these. However the endpoints are required if you prefer to have a non-public ip address in your task. Because our webpage currently contains non-sensitive data, we aim to minimize cost. If this will change un comment these lines and set the next variable assignPublicIp false.
+    // AWS VPC endpoints have cost so we don't keep these. 
+    // However the endpoints are required if you prefer to have a non-public ip address in your task. 
+    // Because our webpage currently contains non-sensitive data, we aim to minimize cost. 
+    // If this will change un comment these lines and set the next variable assignPublicIp false.
 
-    let assignPublicIp = true
+    let assignPublicIp = false
 
-    /*
+    if (!assignPublicIp) {
 
-    const ecrEndpoint = new GatewayVpcEndpoint(this, 'vpc-endpoint-for-ecr', {
-      service: GatewayVpcEndpointAwsService.S3,
-      vpc: vpcUsed,
-    })
+      // If we don't want to have a private IP address, we need to create the needed gateways
 
-    const ecrEndpointECR = new InterfaceVpcEndpoint(this, 'vpc-interface-endpoint-ecr', {
-      service: InterfaceVpcEndpointAwsService.ECR,
-      vpc: vpcUsed
-    })
+      const ecrEndpoint = new GatewayVpcEndpoint(this, 'vpc-endpoint-for-ecr', {
+        service: GatewayVpcEndpointAwsService.S3,
+        vpc: vpcUsed,
+      })
 
-    const ecrEndpointECRDocker = new InterfaceVpcEndpoint(this, 'vpc-interface-endpoint-ecr-docker', {
-      service: InterfaceVpcEndpointAwsService.ECR_DOCKER,
-      vpc: vpcUsed
-    })
+      const ecrEndpointECR = new InterfaceVpcEndpoint(this, 'vpc-interface-endpoint-ecr', {
+        service: InterfaceVpcEndpointAwsService.ECR,
+        vpc: vpcUsed
+      })
 
-    ecrEndpoint.addToPolicy(new PolicyStatement({
-      actions: ['s3:GetObject'],
-      principals: [new StarPrincipal()],
-      resources: ['arn:aws:s3:::prod-' + this.region + '-starport-layer-bucket/*']
-    }))
+      const ecrEndpointECRDocker = new InterfaceVpcEndpoint(this, 'vpc-interface-endpoint-ecr-docker', {
+        service: InterfaceVpcEndpointAwsService.ECR_DOCKER,
+        vpc: vpcUsed
+      })
 
-    */
+      ecrEndpoint.addToPolicy(new PolicyStatement({
+        actions: ['s3:GetObject'],
+        principals: [new StarPrincipal()],
+        resources: ['arn:aws:s3:::prod-' + this.region + '-starport-layer-bucket/*']
+      }))
+
+    }
 
     const securityGroupUsed = new SecurityGroup(this, 'security-group-for-webpage', {
       vpc: vpcUsed,
       description: 'This Security Group is used for for the webpage. Do not delete this manually, its part of cdk stack.'
     })
 
-    securityGroupUsed.addIngressRule(Peer.anyIpv6(), Port.HTTPS)
+    const securityGroupUsedForLBn = new SecurityGroup(this, 'security-group-for-webpagelb', {
+      vpc: vpcUsed,
+      description: 'This Security Group is used for for the webpage. Do not delete this manually, its part of cdk stack.'
+    })
+
+    //securityGroupUsed.addIngressRule(Peer.anyIpv6(), Port.HTTPS)
 
     const cluster = new Cluster(this, 'ClusterForWebpage', {
       vpc: vpcUsed
@@ -104,6 +120,58 @@ export class WebsiteInfraStack extends Stack {
       taskDefinition: task,
       securityGroups: [securityGroupUsed],
       assignPublicIp: assignPublicIp
+    })
+
+    const appLoadBalancer = new ApplicationLoadBalancer(this, 'load-balancer-for-webpage', {
+      vpc: vpcUsed,
+      securityGroup: securityGroupUsedForLBn,
+      internetFacing: true
+    })
+
+    const targetGroup = new ApplicationTargetGroup(this, 'target-group-for-lb', {
+      vpc: vpcUsed,
+      port: 3000,
+      targets: [service],
+      protocol: ApplicationProtocol.HTTP,
+      healthCheck: {
+        path: '/healthcheck',
+        port: '3000',
+        protocol: Protocol.HTTP,
+        healthyHttpCodes: '200',
+        interval: Duration.seconds(300)
+      }
+    })
+
+    appLoadBalancer.addListener('https-listener', {
+      certificates: [Certificate.fromCertificateArn(this, 'cert-for-webpage', StringParameter.valueForStringParameter(this, '/website/certArn'))],
+      protocol: ApplicationProtocol.HTTPS,
+      defaultTargetGroups: [targetGroup]
+    })
+
+    appLoadBalancer.addListener('http-redirect', {
+      port: 80,
+      defaultAction: ListenerAction.redirect({
+        protocol: 'HTTPS',
+        port: '443',
+        permanent: true
+      })
+    })
+
+    const hostedZone = HostedZone.fromHostedZoneAttributes(this, 'hosted_zone', {
+      hostedZoneId: 'Z0337437VGT9EPZ7HEZ4',
+      zoneName: 'technarion.com'
+    })
+
+
+    const aAlias = new ARecord(this, 'a-record-for-domain', {
+      target: RecordTarget.fromAlias(new LoadBalancerTarget(appLoadBalancer)),
+      zone: hostedZone
+    })
+
+    const cnameRecord = new CnameRecord(this, 'cname-record-for-webpage', {
+      domainName: 'technarion.com',
+      zone: hostedZone,
+      recordName: 'www'
     })
   }
 }
