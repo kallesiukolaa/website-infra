@@ -32,7 +32,7 @@ import {LoadBalancer} from 'aws-cdk-lib/aws-elasticloadbalancing'
 import {StringParameter} from 'aws-cdk-lib/aws-ssm'
 import {ARecord, HostedZone, RecordTarget, CnameRecord} from 'aws-cdk-lib/aws-route53'
 import { ClassicLoadBalancerTarget, LoadBalancerTarget } from 'aws-cdk-lib/aws-route53-targets';
-import { ApplicationLoadBalancer, ApplicationProtocol, ApplicationTargetGroup, ListenerAction, Protocol } from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import { ApplicationLoadBalancer, ApplicationProtocol, ApplicationTargetGroup, ListenerAction, Protocol, SslPolicy } from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import { Certificate } from 'aws-cdk-lib/aws-certificatemanager';
 import { DataProtectionPolicy, LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
 
@@ -94,8 +94,6 @@ export class WebsiteInfraStack extends Stack {
       vpc: vpcUsed,
       description: 'This Security Group is used for for the webpage. Do not delete this manually, its part of cdk stack.'
     })
-
-    //securityGroupUsed.addIngressRule(Peer.anyIpv6(), Port.HTTPS)
 
     const cluster = new Cluster(this, 'ClusterForWebpage', {
       vpc: vpcUsed
@@ -161,7 +159,8 @@ export class WebsiteInfraStack extends Stack {
     appLoadBalancer.addListener('https-listener', {
       certificates: [Certificate.fromCertificateArn(this, 'cert-for-webpage', StringParameter.valueForStringParameter(this, '/website/certArn'))],
       protocol: ApplicationProtocol.HTTPS,
-      defaultTargetGroups: [targetGroup]
+      defaultTargetGroups: [targetGroup],
+      sslPolicy: SslPolicy.TLS13_13
     })
 
     appLoadBalancer.addListener('http-redirect', {
