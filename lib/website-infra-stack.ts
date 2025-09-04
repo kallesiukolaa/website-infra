@@ -25,6 +25,7 @@ import {
 import { Repository } from 'aws-cdk-lib/aws-ecr'
 import { configDotenv } from 'dotenv';
 import { 
+  Policy,
   PolicyStatement, 
   StarPrincipal 
 } from 'aws-cdk-lib/aws-iam';
@@ -35,6 +36,10 @@ import { ClassicLoadBalancerTarget, LoadBalancerTarget } from 'aws-cdk-lib/aws-r
 import { ApplicationLoadBalancer, ApplicationProtocol, ApplicationTargetGroup, ListenerAction, Protocol, SslPolicy } from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import { Certificate } from 'aws-cdk-lib/aws-certificatemanager';
 import { DataProtectionPolicy, LogGroup, RetentionDays } from 'aws-cdk-lib/aws-logs';
+import {Queue} from 'aws-cdk-lib/aws-sqs'
+import {Code, Function, Runtime} from 'aws-cdk-lib/aws-lambda'
+import path from 'path';
+import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 
 configDotenv({ path: ".env" })
 
@@ -77,6 +82,11 @@ export class WebsiteInfraStack extends Stack {
         vpc: vpcUsed
       })
 
+      const endpointForSQS = new InterfaceVpcEndpoint(this, 'vpc-interface-endpoint-cloudwatch-sqs', {
+        service: InterfaceVpcEndpointAwsService.SQS,
+        vpc: vpcUsed
+      })
+
       ecrEndpoint.addToPolicy(new PolicyStatement({
         actions: ['s3:GetObject'],
         principals: [new StarPrincipal()],
@@ -93,6 +103,11 @@ export class WebsiteInfraStack extends Stack {
     const securityGroupUsedForLBn = new SecurityGroup(this, 'security-group-for-webpagelb', {
       vpc: vpcUsed,
       description: 'This Security Group is used for for the webpage. Do not delete this manually, its part of cdk stack.'
+    })
+
+    const queueForContacts = new Queue(this, 'queueForContacts', {
+      enforceSSL: true,
+      receiveMessageWaitTime: Duration.seconds(10)
     })
 
     const cluster = new Cluster(this, 'ClusterForWebpage', {
@@ -126,7 +141,10 @@ export class WebsiteInfraStack extends Stack {
           retention: RetentionDays.ONE_DAY,
           removalPolicy: RemovalPolicy.DESTROY
         })
-      })
+      }),
+      environment:{
+        'QUEUE_URL': queueForContacts.queueUrl
+      }
     })
 
     const service = new FargateService(this, 'Service-for-running-the-webpage', {
@@ -188,5 +206,27 @@ export class WebsiteInfraStack extends Stack {
       zone: hostedZone,
       recordName: 'www'
     })
+
+    const readerLambda = new Function(this, 'lambda-for-delivering-contacts', {
+      code: Code.fromAsset(path.join(__dirname, 'new-contact-delivery-lambda')),
+      handler: 'index.handler',
+      runtime: Runtime.NODEJS_22_X,
+      environment: {
+        'TEST_VARIABLE':'TEST_VALUE'
+      }
+    })
+
+    const newContactEventSource = new SqsEventSource(queueForContacts);
+
+    readerLambda.addEventSource(newContactEventSource)
+
+    task.taskRole.attachInlinePolicy(new Policy(this, 'policy-for-pushing-contacts-to-sqs', {
+      statements: [
+        new PolicyStatement({
+          actions: ["sqs:SendMessage"],
+          resources: [queueForContacts.queueArn]
+        })
+      ]
+    }))
   }
 }
