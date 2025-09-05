@@ -212,7 +212,7 @@ export class WebsiteInfraStack extends Stack {
       handler: 'index.handler',
       runtime: Runtime.NODEJS_22_X,
       environment: {
-        'TEST_VARIABLE':'TEST_VALUE'
+        'TOPIC_ARN': StringParameter.valueForStringParameter(this, '/website/emailTopicArn')
       }
     })
 
@@ -225,6 +225,15 @@ export class WebsiteInfraStack extends Stack {
         new PolicyStatement({
           actions: ["sqs:SendMessage"],
           resources: [queueForContacts.queueArn]
+        })
+      ]
+    }))
+
+    readerLambda.role?.attachInlinePolicy(new Policy(this, 'policy-for-pushing-contacts-to-sns', {
+      statements: [
+        new PolicyStatement({
+          actions: ["sns:Publish"],
+          resources: [StringParameter.valueForStringParameter(this, '/website/emailTopicArn')]
         })
       ]
     }))
