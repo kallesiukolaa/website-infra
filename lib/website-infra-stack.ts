@@ -43,6 +43,13 @@ import { SqsEventSource } from 'aws-cdk-lib/aws-lambda-event-sources';
 
 configDotenv({ path: ".env" })
 
+class InvalidParameter extends Error {
+    constructor(message: string) {
+        super(message);
+        this.name = "InvalidParameterInputError";
+    }
+}
+
 export class WebsiteInfraStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
@@ -55,8 +62,13 @@ export class WebsiteInfraStack extends Stack {
     // However the endpoints are required if you prefer to have a non-public ip address in your task. 
     // Because our webpage currently contains non-sensitive data, we aim to minimize cost. 
     // If this will change un comment these lines and set the next variable assignPublicIp false.
+    var assignPublicIp_val = process.env.PUBLIC_IP 
 
-    let assignPublicIp = false
+    if (assignPublicIp_val != 'TRUE' && assignPublicIp_val != 'FALSE') {
+      throw new InvalidParameter("PUBLIC_IP parameter should be either TRUE or FALSE.");
+    }
+
+    let assignPublicIp = (assignPublicIp_val == 'TRUE')
 
     if (!assignPublicIp) {
 
