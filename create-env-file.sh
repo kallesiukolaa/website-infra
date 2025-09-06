@@ -10,4 +10,5 @@ cat > .env << EOF
 ACCOUNT=$ACCOUNT_ID
 REGION=$REGION
 ECR_REPO=aws-repo-for-my-webpage
+PUBLIC_IP=TRUE
 EOF
