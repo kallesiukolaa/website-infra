@@ -14,7 +14,7 @@ import { CorsHttpMethod, DomainName, HttpApi, HttpMethod, ApiMapping } from 'aws
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import { Bucket } from 'aws-cdk-lib/aws-s3';
 import { Distribution, OriginAccessIdentity, ViewerProtocolPolicy } from 'aws-cdk-lib/aws-cloudfront';
-import { S3Origin } from 'aws-cdk-lib/aws-cloudfront-origins';
+import { S3BucketOrigin, S3Origin } from 'aws-cdk-lib/aws-cloudfront-origins';
 
 configDotenv({ path: ".env" })
 
@@ -53,9 +53,7 @@ export class WebsiteInfraStack extends Stack {
 
     const distribution = new Distribution(this, 'WebsiteDistribution', {
       defaultBehavior: {
-        origin: new S3Origin(websiteBucket, {
-          originAccessIdentity: originAccessIdentity,
-        }),
+        origin: S3BucketOrigin.withOriginAccessControl(websiteBucket),
         viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
       },
       domainNames: ['technarion.com', 'www.technarion.com'], // Replace with your domain names
@@ -65,9 +63,7 @@ export class WebsiteInfraStack extends Stack {
 
     const distributionFI = new Distribution(this, 'WebsiteDistribution-fi', {
       defaultBehavior: {
-        origin: new S3Origin(websiteBucket, {
-          originAccessIdentity: originAccessIdentity,
-        }),
+        origin: S3BucketOrigin.withOriginAccessControl(websiteBucket),
         viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
       },
       domainNames: ['technarion.fi', 'www.technarion.fi'], // Replace with your domain names
