@@ -31,9 +31,16 @@ export class WebsiteInfraStack extends Stack {
 
     const webCert = Certificate.fromCertificateArn(this, 'cert-for-webpage', StringParameter.valueForStringParameter(this, '/website/certArn'))
 
+    const webCertFI = Certificate.fromCertificateArn(this, 'cert-for-webpage-fi', StringParameter.valueForStringParameter(this, '/website/certArnFI'))
+
     const hostedZone = HostedZone.fromHostedZoneAttributes(this, 'hosted_zone', {
       hostedZoneId: 'Z0337437VGT9EPZ7HEZ4',
       zoneName: 'technarion.com'
+    })
+
+    const hostedZoneFI = HostedZone.fromHostedZoneAttributes(this, 'hosted_zone_fi', {
+      hostedZoneId: 'Z02748021O0SU6QSPNWG9',
+      zoneName: 'technarion.fi'
     })
 
     const websiteBucket = Bucket.fromBucketName(this, "web-site-bucket", process.env.WEB_SITE_BUCKET ?? '')
@@ -56,6 +63,18 @@ export class WebsiteInfraStack extends Stack {
       defaultRootObject: 'index.html',
     });
 
+    const distributionFI = new Distribution(this, 'WebsiteDistribution-fi', {
+      defaultBehavior: {
+        origin: new S3Origin(websiteBucket, {
+          originAccessIdentity: originAccessIdentity,
+        }),
+        viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+      },
+      domainNames: ['technarion.fi', 'www.technarion.fi'], // Replace with your domain names
+      certificate: webCertFI,
+      defaultRootObject: 'index.html',
+    });
+
 
     const aAlias = new ARecord(this, 'a-record-for-domain', {
       target: RecordTarget.fromAlias(new CloudFrontTarget(distribution)),
@@ -65,6 +84,17 @@ export class WebsiteInfraStack extends Stack {
     const cnameRecord = new CnameRecord(this, 'cname-record-for-webpage', {
       domainName: 'technarion.com',
       zone: hostedZone,
+      recordName: 'www'
+    })
+
+    const aAliasFI = new ARecord(this, 'a-record-for-domain-fi', {
+      target: RecordTarget.fromAlias(new CloudFrontTarget(distribution)),
+      zone: hostedZoneFI
+    })
+
+    const cnameRecordFI = new CnameRecord(this, 'cname-record-for-webpage-fi', {
+      domainName: 'technarion.fi',
+      zone: hostedZoneFI,
       recordName: 'www'
     })
 
@@ -91,7 +121,7 @@ export class WebsiteInfraStack extends Stack {
         allowHeaders: ['*'],
         exposeHeaders: ['*'],
         allowMethods: [CorsHttpMethod.POST],
-        allowOrigins: ['http://localhost:3000', 'https://technarion.com', 'https://technarion.fi', 'https://www.technarion.com']
+        allowOrigins: ['http://localhost:3000', 'https://technarion.com', 'https://technarion.fi', 'https://www.technarion.com', 'https://www.technarion.fi']
       }
     })
 
