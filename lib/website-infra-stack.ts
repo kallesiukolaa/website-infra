@@ -1,4 +1,4 @@
-import { Stack, StackProps } from 'aws-cdk-lib';
+import { Duration, Stack, StackProps } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import { configDotenv } from 'dotenv';
 import {
@@ -12,7 +12,7 @@ import { Code, Function, Runtime } from 'aws-cdk-lib/aws-lambda'
 import path from 'path';
 import { CorsHttpMethod, DomainName, HttpApi, HttpMethod, ApiMapping } from 'aws-cdk-lib/aws-apigatewayv2'
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
-import { Bucket } from 'aws-cdk-lib/aws-s3';
+import { Bucket, BucketEncryption, ObjectOwnership } from 'aws-cdk-lib/aws-s3';
 import { Distribution, OriginAccessIdentity, ViewerProtocolPolicy } from 'aws-cdk-lib/aws-cloudfront';
 import { S3BucketOrigin, S3Origin } from 'aws-cdk-lib/aws-cloudfront-origins';
 
@@ -45,6 +45,17 @@ export class WebsiteInfraStack extends Stack {
 
     const websiteBucket = Bucket.fromBucketName(this, "web-site-bucket", process.env.WEB_SITE_BUCKET ?? '')
 
+    const accessLogsBucket = new Bucket(this, 'bucket-for-website-access-logs', {
+      enforceSSL: true,
+      objectOwnership: ObjectOwnership.OBJECT_WRITER,
+      lifecycleRules: [
+        {
+          expiration: Duration.days(1),
+          prefix: 'webapp'
+        }
+      ]
+    })
+
     const originAccessIdentity = new OriginAccessIdentity(
       this,
       'OAI',
@@ -59,6 +70,8 @@ export class WebsiteInfraStack extends Stack {
       domainNames: ['technarion.com', 'www.technarion.com'], // Replace with your domain names
       certificate: webCert,
       defaultRootObject: 'index.html',
+      logBucket: accessLogsBucket,
+      logFilePrefix: 'webappCom'
     });
 
     const distributionFI = new Distribution(this, 'WebsiteDistribution-fi', {
@@ -69,6 +82,8 @@ export class WebsiteInfraStack extends Stack {
       domainNames: ['technarion.fi', 'www.technarion.fi'], // Replace with your domain names
       certificate: webCertFI,
       defaultRootObject: 'index.html',
+      logBucket: accessLogsBucket,
+      logFilePrefix: 'webappFi'
     });
 
 
@@ -84,7 +99,7 @@ export class WebsiteInfraStack extends Stack {
     })
 
     const aAliasFI = new ARecord(this, 'a-record-for-domain-fi', {
-      target: RecordTarget.fromAlias(new CloudFrontTarget(distribution)),
+      target: RecordTarget.fromAlias(new CloudFrontTarget(distributionFI)),
       zone: hostedZoneFI
     })
 
