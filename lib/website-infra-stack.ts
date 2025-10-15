@@ -5,16 +5,16 @@ import {
   Policy,
   PolicyStatement} from 'aws-cdk-lib/aws-iam';
 import { StringParameter } from 'aws-cdk-lib/aws-ssm'
-import { ARecord, HostedZone, RecordTarget, CnameRecord } from 'aws-cdk-lib/aws-route53'
+import { ARecord, HostedZone, RecordTarget, CnameRecord, AaaaRecord } from 'aws-cdk-lib/aws-route53'
 import { ApiGatewayv2DomainProperties, CloudFrontTarget } from 'aws-cdk-lib/aws-route53-targets';
 import { Certificate } from 'aws-cdk-lib/aws-certificatemanager';
 import { Code, Function, Runtime } from 'aws-cdk-lib/aws-lambda'
 import path from 'path';
 import { CorsHttpMethod, DomainName, HttpApi, HttpMethod, ApiMapping } from 'aws-cdk-lib/aws-apigatewayv2'
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
-import { Bucket, BucketEncryption, ObjectOwnership } from 'aws-cdk-lib/aws-s3';
-import { Distribution, OriginAccessIdentity, ViewerProtocolPolicy } from 'aws-cdk-lib/aws-cloudfront';
-import { S3BucketOrigin, S3Origin } from 'aws-cdk-lib/aws-cloudfront-origins';
+import { Bucket, ObjectOwnership } from 'aws-cdk-lib/aws-s3';
+import { Distribution, FunctionEventType, OriginAccessIdentity, ViewerProtocolPolicy, Function as CloudFrontFunction, FunctionCode } from 'aws-cdk-lib/aws-cloudfront';
+import { S3BucketOrigin } from 'aws-cdk-lib/aws-cloudfront-origins';
 
 configDotenv({ path: ".env" })
 
@@ -62,10 +62,23 @@ export class WebsiteInfraStack extends Stack {
     );
     websiteBucket.grantRead(originAccessIdentity);
 
+    const rewriteFunction = new CloudFrontFunction(this, 'lambda-for-redirect', {
+      comment: 'Rewrites path to include .html extension if missing (e.g., /contact to /contact.html)',
+      code: FunctionCode.fromFile({
+        filePath: path.join(__dirname, 'redirect-function/index.mjs')
+      })
+    })
+
     const distribution = new Distribution(this, 'WebsiteDistribution', {
       defaultBehavior: {
         origin: S3BucketOrigin.withOriginAccessControl(websiteBucket),
         viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        functionAssociations: [
+          {
+            function: rewriteFunction,
+            eventType: FunctionEventType.VIEWER_REQUEST
+          }
+        ]
       },
       domainNames: ['technarion.com', 'www.technarion.com'], // Replace with your domain names
       certificate: webCert,
@@ -78,6 +91,12 @@ export class WebsiteInfraStack extends Stack {
       defaultBehavior: {
         origin: S3BucketOrigin.withOriginAccessControl(websiteBucket),
         viewerProtocolPolicy: ViewerProtocolPolicy.REDIRECT_TO_HTTPS,
+        functionAssociations: [
+          {
+            function: rewriteFunction,
+            eventType: FunctionEventType.VIEWER_REQUEST
+          }
+        ]
       },
       domainNames: ['technarion.fi', 'www.technarion.fi'], // Replace with your domain names
       certificate: webCertFI,
@@ -91,6 +110,18 @@ export class WebsiteInfraStack extends Stack {
       target: RecordTarget.fromAlias(new CloudFrontTarget(distribution)),
       zone: hostedZone
     })
+
+    // Apex (AAAA)
+    new AaaaRecord(this, 'ApexAAAA', {
+      zone:hostedZone,
+      target: RecordTarget.fromAlias(new CloudFrontTarget(distribution)),
+    });
+
+    // Apex (AAAA)
+    new AaaaRecord(this, 'ApexAAAAFI', {
+      zone:hostedZoneFI,
+      target: RecordTarget.fromAlias(new CloudFrontTarget(distributionFI)),
+    });
 
     const cnameRecord = new CnameRecord(this, 'cname-record-for-webpage', {
       domainName: 'technarion.com',
@@ -148,6 +179,14 @@ export class WebsiteInfraStack extends Stack {
     })
 
     const aAliasForApi = new ARecord(this, 'A-record-for-api', {
+      target: RecordTarget.fromAlias(
+        new ApiGatewayv2DomainProperties(domainName.regionalDomainName, domainName.regionalHostedZoneId)
+      ),
+      zone: hostedZone,
+      recordName: 'api.technarion.com'
+    })
+
+    const aaaaAliasForApi = new AaaaRecord(this, 'AAAA-record-for-api', {
       target: RecordTarget.fromAlias(
         new ApiGatewayv2DomainProperties(domainName.regionalDomainName, domainName.regionalHostedZoneId)
       ),
