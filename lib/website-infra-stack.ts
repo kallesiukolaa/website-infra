@@ -158,6 +158,26 @@ export class WebsiteInfraStack extends Stack {
       ]
     }))
 
+      const invalidationLambda = new Function(this, 'lambda-for-invalidating-distributions', {
+      code: Code.fromAsset(path.join(__dirname, 'invalidation-function')),
+      handler: 'index.handler',
+      runtime: Runtime.NODEJS_LATEST,
+      functionName: 'website-invalidate',
+      environment: {
+        'DISTRIBUTION_ID_COM': distribution.distributionId,
+        'DISTRIBUTION_ID_FI': distributionFI.distributionId
+      }
+    })
+
+    invalidationLambda.role?.attachInlinePolicy(new Policy(this, 'policy-for-invalidating-distributions', {
+      statements: [
+        new PolicyStatement({
+          actions: ["cloudfront:CreateInvalidation"],
+          resources: [distribution.distributionArn, distributionFI.distributionArn]
+        })
+      ]
+    }))
+
     const api = new HttpApi(this, "contact-delivery-api", {
       corsPreflight: {
         allowHeaders: ['*'],
