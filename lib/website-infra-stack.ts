@@ -1,4 +1,4 @@
-import { Duration, Stack, StackProps } from 'aws-cdk-lib';
+import { Duration, RemovalPolicy, Stack, StackProps } from 'aws-cdk-lib';
 import { Construct } from 'constructs';
 import { configDotenv } from 'dotenv';
 import {
@@ -12,7 +12,7 @@ import { Code, Function, Runtime } from 'aws-cdk-lib/aws-lambda'
 import path from 'path';
 import { CorsHttpMethod, DomainName, HttpApi, HttpMethod, ApiMapping } from 'aws-cdk-lib/aws-apigatewayv2'
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
-import { Bucket, ObjectOwnership } from 'aws-cdk-lib/aws-s3';
+import { BlockPublicAccess, Bucket, BucketAccessControl, ObjectOwnership } from 'aws-cdk-lib/aws-s3';
 import { Distribution, FunctionEventType, OriginAccessIdentity, ViewerProtocolPolicy, Function as CloudFrontFunction, FunctionCode } from 'aws-cdk-lib/aws-cloudfront';
 import { S3BucketOrigin } from 'aws-cdk-lib/aws-cloudfront-origins';
 
@@ -43,7 +43,15 @@ export class WebsiteInfraStack extends Stack {
       zoneName: 'technarion.fi'
     })
 
-    const websiteBucket = Bucket.fromBucketName(this, "web-site-bucket", process.env.WEB_SITE_BUCKET ?? '')
+    //const websiteBucket = Bucket.fromBucketName(this, "web-site-bucket", process.env.WEB_SITE_BUCKET ?? '')
+
+    const websiteBucket = new Bucket(this, 'website-origin-bucket-new', {
+      blockPublicAccess: BlockPublicAccess.BLOCK_ALL,
+      enforceSSL: true,
+      accessControl: BucketAccessControl.PRIVATE,
+      bucketName: 'technarion-3-bucket-for-webpage',
+      removalPolicy: RemovalPolicy.DESTROY
+    })
 
     const accessLogsBucket = new Bucket(this, 'bucket-for-website-access-logs', {
       enforceSSL: true,
@@ -55,12 +63,6 @@ export class WebsiteInfraStack extends Stack {
         }
       ]
     })
-
-    const originAccessIdentity = new OriginAccessIdentity(
-      this,
-      'OAI',
-    );
-    websiteBucket.grantRead(originAccessIdentity);
 
     const rewriteFunction = new CloudFrontFunction(this, 'lambda-for-redirect', {
       comment: 'Rewrites path to include .html extension if missing (e.g., /contact to /contact.html)',
