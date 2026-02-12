@@ -13,8 +13,10 @@ import path from 'path';
 import { CorsHttpMethod, DomainName, HttpApi, HttpMethod, ApiMapping } from 'aws-cdk-lib/aws-apigatewayv2'
 import { HttpLambdaIntegration } from 'aws-cdk-lib/aws-apigatewayv2-integrations';
 import { BlockPublicAccess, Bucket, BucketAccessControl, ObjectOwnership } from 'aws-cdk-lib/aws-s3';
-import { Distribution, FunctionEventType, OriginAccessIdentity, ViewerProtocolPolicy, Function as CloudFrontFunction, FunctionCode } from 'aws-cdk-lib/aws-cloudfront';
+import { Distribution, FunctionEventType, ViewerProtocolPolicy, Function as CloudFrontFunction, FunctionCode } from 'aws-cdk-lib/aws-cloudfront';
 import { S3BucketOrigin } from 'aws-cdk-lib/aws-cloudfront-origins';
+import {Schedule} from 'aws-cdk-lib/aws-scheduler';
+import {LambdaInvoke} from 'aws-cdk-lib/aws-scheduler-targets'
 
 configDotenv({ path: ".env" })
 
@@ -28,6 +30,8 @@ class InvalidParameter extends Error {
 export class WebsiteInfraStack extends Stack {
   constructor(scope: Construct, id: string, props?: StackProps) {
     super(scope, id, props);
+
+    let disposableDomainsUrl = "https://raw.githubusercontent.com/disposable/disposable-email-domains/master/domains.json";
 
     const webCert = Certificate.fromCertificateArn(this, 'cert-for-webpage', StringParameter.valueForStringParameter(this, '/website/certArn'))
 
@@ -62,6 +66,11 @@ export class WebsiteInfraStack extends Stack {
           prefix: 'webapp'
         }
       ]
+    })
+
+    const tempAssetsBucket = new Bucket(this, 'bucket-for-temp-assets', {
+      enforceSSL: true,
+      removalPolicy: RemovalPolicy.DESTROY
     })
 
     const rewriteFunction = new CloudFrontFunction(this, 'lambda-for-redirect', {
@@ -147,7 +156,9 @@ export class WebsiteInfraStack extends Stack {
       handler: 'index.handler',
       runtime: Runtime.NODEJS_LATEST,
       environment: {
-        'TOPIC_ARN': StringParameter.valueForStringParameter(this, '/website/emailTopicArn')
+        'TOPIC_ARN': StringParameter.valueForStringParameter(this, '/website/emailTopicArn'),
+        'TEMP_ASSET_BUCKET_NAME': tempAssetsBucket.bucketName,
+        'DISPOSABLE_DOMAINS_LIST': 'domains.json'
       }
     })
 
@@ -160,7 +171,16 @@ export class WebsiteInfraStack extends Stack {
       ]
     }))
 
-      const invalidationLambda = new Function(this, 'lambda-for-invalidating-distributions', {
+    senderLambda.role?.attachInlinePolicy(new Policy(this, 'policy-for-getting-emaildomain-list-from-s3', {
+      statements: [
+        new PolicyStatement({
+          actions: ["s3:GetObject"],
+          resources: [tempAssetsBucket.bucketArn + '/*']
+        })
+      ]
+    }))
+
+    const invalidationLambda = new Function(this, 'lambda-for-invalidating-distributions', {
       code: Code.fromAsset(path.join(__dirname, 'invalidation-function')),
       handler: 'index.handler',
       runtime: Runtime.NODEJS_LATEST,
@@ -179,6 +199,34 @@ export class WebsiteInfraStack extends Stack {
         })
       ]
     }))
+
+    const disposableEmaillistUpdaterFunctions = new Function(this, 'lambda-for-updating-email-list', {
+      code: Code.fromAsset(path.join(__dirname, 'update-disposable-email-domains')),
+      handler: 'index.handler',
+      runtime: Runtime.NODEJS_LATEST,
+      functionName: 'update-disposable-email-domains',
+      environment: {
+        'FILE_URL': disposableDomainsUrl,
+        'TEMP_ASSET_BUCKET_NAME': tempAssetsBucket.bucketName,
+        'FILE_NAME': 'domains.json'
+      }
+    })
+
+    disposableEmaillistUpdaterFunctions.role?.attachInlinePolicy(new Policy(this, 'policy-for-s3-access-domains', {
+      statements: [
+        new PolicyStatement({
+          actions: ["s3:PutObject"],
+          resources: [tempAssetsBucket.bucketArn + '/*']
+        })
+      ]
+    }))
+
+    const emailDomainListUpdateScheduler = new Schedule(this, 'emailDomainListUpdateScheduler', {
+      schedule: {
+        expressionString: 'cron(0 0 * * ? *)'
+      },
+      target: new LambdaInvoke(disposableEmaillistUpdaterFunctions)
+    })
 
     const api = new HttpApi(this, "contact-delivery-api", {
       corsPreflight: {
